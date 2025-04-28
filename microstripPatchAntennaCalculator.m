@@ -1,47 +1,53 @@
 function microstripPatchAntennaCalculator()
     % Enhanced Microstrip Patch Antenna Calculator
-    % Using the exact equations provided for more accurate calculations
+    % Calculates antenna parameters using exact equations for accuracy
     
     clc;
     disp('Enhanced Microstrip Patch Antenna Calculator');
     disp('------------------------------------------');
     disp('1. Calculate dimensions and parameters from frequency');
     disp('2. Calculate frequency and parameters from dimensions');
-    choice = input('Select option (1-2): ');
+    userChoice = input('Select option (1-2): ');
     
-    % Common parameters needed for all calculations
-    epsilon_r = input('Enter substrate dielectric constant (εr): ');
-    h = input('Enter substrate thickness (mm): ');
+    % Get common parameters needed for all calculations
+    substratePermittivity = input('Enter substrate dielectric constant (εr): ');
+    substrateThickness = input('Enter substrate thickness (mm): ');
     
-    switch choice
+    switch userChoice
         case 1
             % Mode 1: Frequency -> Dimensions
-            f0 = input('Enter resonant frequency (GHz): ');
+            resonantFrequency = input('Enter resonant frequency (GHz): ');
             
-            % Calculate dimensions
-            [W, L, epsilon_eff] = calculateDimensionsFromFreq(f0, epsilon_r, h);
+            % Calculate physical dimensions
+            [patchWidth, patchLength, effectivePermittivity] = ...
+                calculateDimensionsFromFrequency(resonantFrequency, substratePermittivity, substrateThickness);
             
             % Calculate all other parameters
-            calculated_freq = f0; % This is our input
-            BW = calculateBandwidth(f0, epsilon_r, h, W, L);
-            [f_ijk, L_star] = calculateHigherModes(f0, epsilon_eff, h, W, L);
-            [Rin0P, Rin0M] = calculateEdgeResistance(f0, epsilon_eff, W, L, h);
+            calculatedFrequency = resonantFrequency; % This is our input
+            bandwidth = calculateBandwidth(resonantFrequency, substratePermittivity, substrateThickness, patchWidth, patchLength);
+            [higherModeFrequencies, extendedLength] = ...
+                calculateHigherModes(resonantFrequency, effectivePermittivity, substrateThickness, patchWidth, patchLength);
+            [edgeResistancePlus, edgeResistanceMinus] = ...
+                calculateEdgeResistance(resonantFrequency, effectivePermittivity, patchWidth, patchLength, substrateThickness);
             
         case 2
             % Mode 2: Dimensions -> Frequency
-            W = input('Enter patch width (mm): ');
-            L = input('Enter patch length (mm): ');
+            patchWidth = input('Enter patch width (mm): ');
+            patchLength = input('Enter patch length (mm): ');
             
             % Calculate effective dielectric constant
-            epsilon_eff = calculateEpsilonEff(epsilon_r, h, W);
+            effectivePermittivity = calculateEffectivePermittivity(substratePermittivity, substrateThickness, patchWidth);
             
             % Calculate frequency from dimensions
-            [calculated_freq, L_star] = calculateFrequencyFromDims(epsilon_eff, h, W, L);
+            [calculatedFrequency, extendedLength] = ...
+                calculateFrequencyFromDimensions(effectivePermittivity, substrateThickness, patchWidth, patchLength);
             
             % Calculate all other parameters
-            BW = calculateBandwidth(calculated_freq, epsilon_r, h, W, L);
-            [f_ijk, ~] = calculateHigherModes(calculated_freq, epsilon_eff, h, W, L);
-            [Rin0P, Rin0M] = calculateEdgeResistance(calculated_freq, epsilon_eff, W, L, h);
+            bandwidth = calculateBandwidth(calculatedFrequency, substratePermittivity, substrateThickness, patchWidth, patchLength);
+            [higherModeFrequencies, ~] = ...
+                calculateHigherModes(calculatedFrequency, effectivePermittivity, substrateThickness, patchWidth, patchLength);
+            [edgeResistancePlus, edgeResistanceMinus] = ...
+                calculateEdgeResistance(calculatedFrequency, effectivePermittivity, patchWidth, patchLength, substrateThickness);
             
         otherwise
             disp('Invalid choice');
@@ -52,163 +58,226 @@ function microstripPatchAntennaCalculator()
     disp(' ');
     disp('MICROSTRIP PATCH ANTENNA PARAMETERS:');
     disp('-----------------------------------');
-    disp(['Resonant Frequency (TM010 mode): ' num2str(calculated_freq) ' GHz']);
-    disp(['Effective Dielectric Constant: ' num2str(epsilon_eff)]);
-    disp(['Patch Width (W): ' num2str(W) ' mm']);
-    disp(['Patch Length (L): ' num2str(L) ' mm']);
-    disp(['Extended Length (L*): ' num2str(L_star) ' mm']);
-    disp(['Bandwidth: ' num2str(BW) '%']);
-    disp(['Edge Resistance (Rin0+): ' num2str(Rin0P) ' ohms']);
-    disp(['Edge Resistance (Rin0-): ' num2str(Rin0M) ' ohms']);
+    disp(['Resonant Frequency (TM010 mode): ' num2str(calculatedFrequency) ' GHz']);
+    disp(['Effective Dielectric Constant: ' num2str(effectivePermittivity)]);
+    disp(['Patch Width (W): ' num2str(patchWidth) ' mm']);
+    disp(['Patch Length (L): ' num2str(patchLength) ' mm']);
+    disp(['Extended Length (L*): ' num2str(extendedLength) ' mm']);
+    disp(['Bandwidth: ' num2str(bandwidth) '%']);
+    disp(['Edge Resistance (Rin0+): ' num2str(edgeResistancePlus) ' ohms']);
+    disp(['Edge Resistance (Rin0-): ' num2str(edgeResistanceMinus) ' ohms']);
     
     % Display higher order modes
     disp(' ');
     disp('Higher Order Mode Frequencies:');
-    disp(['TM020: ' num2str(f_ijk(2,1,1)) ' GHz']);
-    disp(['TM110: ' num2str(f_ijk(1,1,1)) ' GHz']);
-    disp(['TM011: ' num2str(f_ijk(1,1,2)) ' GHz']);
+    disp(['TM020: ' num2str(higherModeFrequencies(2,1,1)) ' GHz']);
+    disp(['TM110: ' num2str(higherModeFrequencies(1,1,1)) ' GHz']);
+    disp(['TM011: ' num2str(higherModeFrequencies(1,1,2)) ' GHz']);
 end
 
-function [W, L, epsilon_eff] = calculateDimensionsFromFreq(f0, epsilon_r, h)
+function [width, length, effectivePermittivity] = calculateDimensionsFromFrequency(resonantFreq, permittivity, thickness)
+    % Calculate patch dimensions from resonant frequency
+    % Inputs:
+    %   resonantFreq - Resonant frequency in GHz
+    %   permittivity - Substrate dielectric constant
+    %   thickness - Substrate thickness in mm
+    % Outputs:
+    %   width - Patch width in mm
+    %   length - Patch length in mm
+    %   effectivePermittivity - Effective dielectric constant
+    
     % Convert units
-    f0 = f0 * 1e9; % GHz to Hz
-    h = h * 1e-3;  % mm to m
+    freqHz = resonantFreq * 1e9; % GHz to Hz
+    thicknessM = thickness * 1e-3; % mm to m
+    speedOfLight = 3e8; % m/s
     
-    c = 3e8; % speed of light
-    
-    % Calculate width using provided equation
-    W = c/(2*f0*sqrt((epsilon_r + 1)/2));
+    % Calculate width using standard formula
+    width = speedOfLight/(2*freqHz*sqrt((permittivity + 1)/2));
     
     % Calculate effective dielectric constant
-    epsilon_eff = calculateEpsilonEff(epsilon_r, h*1e3, W*1e3); % Convert to mm for function
+    effectivePermittivity = calculateEffectivePermittivity(permittivity, thickness, width*1e3);
     
-    % Calculate length using provided equation
-    term1 = c/(2*f0*sqrt(epsilon_eff));
-    term2_num = (epsilon_eff + 0.3)*(W/h + 0.264);
-    term2_den = (epsilon_eff - 0.258)*(W/h + 0.8);
-    term2 = 0.824*h*(term2_num/term2_den);
-    L = term1 - term2;
+    % Calculate length using fringing field correction
+    firstTerm = speedOfLight/(2*freqHz*sqrt(effectivePermittivity));
+    numerator = (effectivePermittivity + 0.3)*(width/thicknessM + 0.264);
+    denominator = (effectivePermittivity - 0.258)*(width/thicknessM + 0.8);
+    secondTerm = 0.824*thicknessM*(numerator/denominator);
+    length = firstTerm - secondTerm;
     
     % Convert to mm for output
-    W = W * 1e3;
-    L = L * 1e3;
+    width = width * 1e3;
+    length = length * 1e3;
 end
 
-function [f0, L_star] = calculateFrequencyFromDims(epsilon_eff, h, W, L)
+function [resonantFreq, extendedLength] = calculateFrequencyFromDimensions(effectivePermittivity, thickness, width, length)
+    % Calculate resonant frequency from patch dimensions
+    % Inputs:
+    %   effectivePermittivity - Effective dielectric constant
+    %   thickness - Substrate thickness in mm
+    %   width - Patch width in mm
+    %   length - Patch length in mm
+    % Outputs:
+    %   resonantFreq - Resonant frequency in GHz
+    %   extendedLength - Effective length with fringing in mm
+    
     % Convert units
-    h = h * 1e-3;  % mm to m
-    W = W * 1e-3;   % mm to m
-    L = L * 1e-3;   % mm to m
+    thicknessM = thickness * 1e-3; % mm to m
+    widthM = width * 1e-3; % mm to m
+    lengthM = length * 1e-3; % mm to m
+    speedOfLight = 3e8; % m/s
     
-    c = 3e8; % speed of light
-    
-    % Calculate extended length L*
-    term_num = (epsilon_eff + 0.3)*(W/h + 0.264);
-    term_den = (epsilon_eff - 0.258)*(W/h + 0.8);
-    L_star = L + 0.824*h*(term_num/term_den);
+    % Calculate extended length due to fringing fields
+    numerator = (effectivePermittivity + 0.3)*(widthM/thicknessM + 0.264);
+    denominator = (effectivePermittivity - 0.258)*(widthM/thicknessM + 0.8);
+    extendedLength = lengthM + 0.824*thicknessM*(numerator/denominator);
     
     % Calculate resonant frequency
-    f0 = c/(2*L_star*sqrt(epsilon_eff));
-    f0 = f0 / 1e9; % Convert to GHz
+    resonantFreq = speedOfLight/(2*extendedLength*sqrt(effectivePermittivity));
+    resonantFreq = resonantFreq / 1e9; % Convert to GHz
     
-    % Convert L_star back to mm
-    L_star = L_star * 1e3;
+    % Convert extendedLength back to mm
+    extendedLength = extendedLength * 1e3;
 end
 
-function epsilon_eff = calculateEpsilonEff(epsilon_r, h, W)
-    % Calculate effective dielectric constant using provided equation
-    epsilon_eff = (epsilon_r + 1)/2 + (epsilon_r - 1)/2 * (1/sqrt(1 + 12*(h/W)));
+function effectivePermittivity = calculateEffectivePermittivity(permittivity, thickness, width)
+    % Calculate effective dielectric constant considering fringing fields
+    % Inputs:
+    %   permittivity - Substrate dielectric constant
+    %   thickness - Substrate thickness in mm
+    %   width - Patch width in mm
+    % Output:
+    %   effectivePermittivity - Effective dielectric constant
+    
+    effectivePermittivity = (permittivity + 1)/2 + ...
+        (permittivity - 1)/2 * (1/sqrt(1 + 12*(thickness/width)));
 end
 
-function BW = calculateBandwidth(f0, epsilon_r, h, W, L)
+function bandwidth = calculateBandwidth(resonantFreq, permittivity, thickness, width, length)
+    % Calculate antenna bandwidth percentage
+    % Inputs:
+    %   resonantFreq - Resonant frequency in GHz
+    %   permittivity - Substrate dielectric constant
+    %   thickness - Substrate thickness in mm
+    %   width - Patch width in mm
+    %   length - Patch length in mm
+    % Output:
+    %   bandwidth - Bandwidth percentage
+    
     % Convert units
-    f0 = f0 * 1e9; % GHz to Hz
-    h = h * 1e-3;  % mm to m
-    W = W * 1e-3;  % mm to m
-    L = L * 1e-3;  % mm to m
-    c = 3e8;
-    lambda = c/f0;
+    freqHz = resonantFreq * 1e9; % GHz to Hz
+    thicknessM = thickness * 1e-3; % mm to m
+    widthM = width * 1e-3; % mm to m
+    lengthM = length * 1e-3; % mm to m
+    speedOfLight = 3e8; % m/s
+    wavelength = speedOfLight/freqHz;
     
-    % Calculate bandwidth using provided equation
-    BW = 3.77 * f0 * ((epsilon_r - 1)/epsilon_r^2) * (W*h/(L*lambda))^2;
-    BW = BW / 1e6; % Convert to percentage
+    % Calculate bandwidth using standard formula
+    bandwidth = 3.77 * freqHz * ((permittivity - 1)/permittivity^2) * ...
+        (widthM*thicknessM/(lengthM*wavelength))^2;
+    bandwidth = bandwidth / 1e6; % Convert to percentage
 end
 
-function [f_ijk, L_star] = calculateHigherModes(f0, epsilon_eff, h, W, L)
+function [modeFrequencies, extendedLength] = calculateHigherModes(resonantFreq, effectivePermittivity, thickness, width, length)
+    % Calculate higher order mode frequencies
+    % Inputs:
+    %   resonantFreq - Fundamental resonant frequency in GHz
+    %   effectivePermittivity - Effective dielectric constant
+    %   thickness - Substrate thickness in mm
+    %   width - Patch width in mm
+    %   length - Patch length in mm
+    % Outputs:
+    %   modeFrequencies - 3D array of mode frequencies (i,j,k) in GHz
+    %   extendedLength - Effective length with fringing in mm
+    
     % Convert units
-    f0 = f0 * 1e9; % GHz to Hz
-    h = h * 1e-3;  % mm to m
-    W = W * 1e-3;  % mm to m
-    L = L * 1e-3;  % mm to m
-    c = 3e8;
+    freqHz = resonantFreq * 1e9; % GHz to Hz
+    thicknessM = thickness * 1e-3; % mm to m
+    widthM = width * 1e-3; % mm to m
+    lengthM = length * 1e-3; % mm to m
+    speedOfLight = 3e8; % m/s
     
-    % Calculate extended length L*
-    term_num = (epsilon_eff + 0.3)*(W/h + 0.264);
-    term_den = (epsilon_eff - 0.258)*(W/h + 0.8);
-    L_star = L + 0.824*h*(term_num/term_den);
+    % Calculate extended length due to fringing fields
+    numerator = (effectivePermittivity + 0.3)*(widthM/thicknessM + 0.264);
+    denominator = (effectivePermittivity - 0.258)*(widthM/thicknessM + 0.8);
+    extendedLength = lengthM + 0.824*thicknessM*(numerator/denominator);
     
-    % Initialize mode frequency matrix
-    f_ijk = zeros(2,2,2);
+    % Initialize mode frequency matrix (i,j,k indices)
+    modeFrequencies = zeros(2,2,2);
     
     % Calculate higher order modes (i,j,k)
     for i = 1:2
         for j = 1:2
             for k = 1:2
-                f_ijk(i,j,k) = c/(2*sqrt(epsilon_eff)) * sqrt((i/L_star)^2 + (j/W)^2 + (k/h)^2);
-                f_ijk(i,j,k) = f_ijk(i,j,k) / 1e9; % Convert to GHz
+                modeFrequencies(i,j,k) = speedOfLight/(2*sqrt(effectivePermittivity)) * ...
+                    sqrt((i/extendedLength)^2 + (j/widthM)^2 + (k/thicknessM)^2);
+                modeFrequencies(i,j,k) = modeFrequencies(i,j,k) / 1e9; % Convert to GHz
             end
         end
     end
     
-    % Convert L_star back to mm
-    L_star = L_star * 1e3;
+    % Convert extendedLength back to mm
+    extendedLength = extendedLength * 1e3;
 end
 
-function [Rin0P, Rin0M] = calculateEdgeResistance(f0, epsilon_eff, W, L, h)
+function [resistancePlus, resistanceMinus] = calculateEdgeResistance(resonantFreq, effectivePermittivity, width, length, thickness)
     % Calculate edge resistance of microstrip patch antenna
     % Inputs:
-    %   f0 - Resonant frequency (GHz)
-    %   epsilon_eff - Effective dielectric constant
-    %   W - Patch width (mm)
-    %   L - Patch length (mm)
-    %   h - Substrate height (mm)
+    %   resonantFreq - Resonant frequency in GHz
+    %   effectivePermittivity - Effective dielectric constant
+    %   width - Patch width in mm
+    %   length - Patch length in mm
+    %   thickness - Substrate height in mm
     % Outputs:
-    %   Rin0P - Edge resistance for + case (ohms)
-    %   Rin0M - Edge resistance for - case (ohms)
+    %   resistancePlus - Edge resistance for + case (ohms)
+    %   resistanceMinus - Edge resistance for - case (ohms)
     
     % Convert units
-    f0 = f0 * 1e9;  % GHz to Hz
-    W = W * 1e-3;   % mm to m
-    L = L * 1e-3;   % mm to m
-    h = h * 1e-3;   % mm to m
+    freqHz = resonantFreq * 1e9; % GHz to Hz
+    widthM = width * 1e-3; % mm to m
+    lengthM = length * 1e-3; % mm to m
+    thicknessM = thickness * 1e-3; % mm to m
+    speedOfLight = 3e8; % m/s
     
-    c = 3e8; % speed of light
-    lambda_o = c/f0;
-    ko = 2*pi/lambda_o;
+    % Calculate wave parameters
+    wavelength = speedOfLight/freqHz;
+    waveNumber = 2*pi/wavelength;
     
     % Calculate conductance terms
-    [G1, G12] = sintegr(W, L, ko);
+    [selfConductance, mutualConductance] = ...
+        calculateConductanceIntegrals(widthM, lengthM, waveNumber);
     
     % Calculate edge resistances
-    Rin0P = 1/(2*(G1 + G12));
-    Rin0M = 1/(2*(G1 - G12));
+    resistancePlus = 1/(2*(selfConductance + mutualConductance));
+    resistanceMinus = 1/(2*(selfConductance - mutualConductance));
 end
 
-function [G1, G12] = sintegr(W, L, ko)
+function [selfConductance, mutualConductance] = calculateConductanceIntegrals(width, length, waveNumber)
     % Numerical integration for conductance calculations
     % Inputs:
-    %   W - Patch width (m)
-    %   L - Patch length (m)
-    %   ko - Wave number in free space
+    %   width - Patch width in meters
+    %   length - Patch length in meters
+    %   waveNumber - Wave number in free space
     % Outputs:
-    %   G1 - Self conductance
-    %   G12 - Mutual conductance
+    %   selfConductance - Self conductance term
+    %   mutualConductance - Mutual conductance term
     
-    th = 0:1:180; 
-    t = th.*pi/180;
-    ARG = cos(t).*(ko*W/2);
-    res1 = sum(sinc(ARG./pi).^2.*sin(t).^2.*sin(t).*((pi/180)*(ko*W/2)^2));
-    res12 = sum(sinc(ARG./pi).^2.*sin(t).^2.*besselj(0,sin(t).*(ko*L)).*sin(t).*((pi/180)*(ko*W/2)^2));
-    G1 = res1./(120*pi^2); 
-    G12 = res12./(120*pi^2);
+    % Create angular sampling points (0 to 180 degrees)
+    thetaDegrees = 0:1:180; 
+    thetaRadians = thetaDegrees.*pi/180;
+    
+    % Calculate argument for sinc function
+    sincArgument = cos(thetaRadians).*(waveNumber*width/2);
+    
+    % Calculate integrand for self conductance
+    selfIntegrand = sinc(sincArgument./pi).^2 .* sin(thetaRadians).^2 .* ...
+        sin(thetaRadians) .* ((pi/180)*(waveNumber*width/2)^2);
+    
+    % Calculate integrand for mutual conductance
+    mutualIntegrand = sinc(sincArgument./pi).^2 .* sin(thetaRadians).^2 .* ...
+        besselj(0, sin(thetaRadians).*(waveNumber*length)) .* ...
+        sin(thetaRadians) .* ((pi/180)*(waveNumber*width/2)^2);
+    
+    % Sum to approximate integral
+    selfConductance = sum(selfIntegrand)./(120*pi^2); 
+    mutualConductance = sum(mutualIntegrand)./(120*pi^2);
 end
